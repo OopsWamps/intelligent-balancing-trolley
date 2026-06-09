@@ -1,5 +1,0 @@
-# 忽略 Objects 目录下的所有内容
-/Objects/*
-
-# 但不要忽略 .gitkeep 文件
-!/Objects/.gitkeep

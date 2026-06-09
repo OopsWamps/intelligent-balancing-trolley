@@ -53,5 +53,13 @@ __pycache__/
 
 # Claude internal
 .agents/
+.claude/
 conversation/
 all_source_files.txt
+
+# Build logs
+build.log
+*.log
+
+# Reference books (too large for GitHub)
+现有实物/05技术扩展/
