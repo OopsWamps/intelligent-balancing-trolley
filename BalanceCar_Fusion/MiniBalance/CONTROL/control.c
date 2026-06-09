@@ -26,9 +26,6 @@ void InitPIDParams(void)
     balance_state.mode = 0;
 }
 
-float pwm_out_val;
-static uint8_t obstacle_blocked = 0;
-
 /* ===============  safety detection =============== */
 
 void CheckLiftState(void)
@@ -79,4 +76,311 @@ void CheckFallDown(void)
     }
 }
 
+/* ===============  mode & balance wrapper =============== */
 
+void ModeSelect(void)
+{
+    static uint8_t last_mode = 0xFF;
+
+    if (balance_state.mode != last_mode)
+    {
+        DataClear();
+        last_mode = balance_state.mode;
+    }
+
+    switch (balance_state.mode)
+    {
+    case MODE_BALANCE:
+        speed_pid.ki = 0.4;
+        Led_Flash(100);
+        break;
+    case MODE_BT_AVOID:
+        speed_pid.ki = 0;
+        Led_Flash(0);
+        Bi_zhang = 1;
+        Read_Distane();
+        if (Distance > 0 && Distance < 25)
+        {
+            if (Flag_Qian == 1)
+            {
+                Flag_Qian = 0; Flag_Hou = 0; Flag_Left = 0; Flag_Right = 1;
+            }
+            else if (Flag_Qian == 0 && Flag_Hou == 0 && Flag_Left == 0 && Flag_Right == 0)
+            {
+                Flag_Hou = 1;
+            }
+            SetBeepMode(BEEP_SYSTEM, BEEP_ON);
+        }
+        else
+        {
+            SetBeepMode(BEEP_SYSTEM, BEEP_OFF);
+        }
+        break;
+    case MODE_FOLLOW:
+        speed_pid.ki = 0;
+        Led_Flash(0);
+        if (Distance > 0 && Distance <= 120) DistPidCtrl();
+        else speed_pid.tar = 0;
+        Read_Distane();
+        break;
+    case MODE_TRACE:
+        speed_pid.ki = 0.4;
+        Led_Flash(100);
+        tracking();
+        break;
+    case MODE_BT_ONLY:
+        speed_pid.ki = 0;
+        Led_Flash(0);
+        Bi_zhang = 0;
+        break;
+    default:
+        break;
+    }
+}
+
+void Balance(void)
+{
+    if (balance_state.balance_enable)
+    {
+        ModeSelect();
+
+        Balance_Pwm = balance(Angle_Balance, Gyro_Balance);
+        Velocity_Pwm = velocity(Encoder_Left, Encoder_Right);
+        Turn_Pwm = turn(Encoder_Left, Encoder_Right, Gyro_Turn);
+
+        Moto1 = -Balance_Pwm + Velocity_Pwm - Turn_Pwm;
+        Moto2 = -Balance_Pwm + Velocity_Pwm + Turn_Pwm;
+
+        Xianfu_Pwm();
+
+        if (Turn_Off(Angle_Balance, Voltage) == 0)
+            Set_Pwm(Moto1, Moto2);
+    }
+}
+
+/* ===============  distance PID =============== */
+
+void DistPidCtrl(void)
+{
+    dist.target = dist_pid.tar;
+    dist.now = (float)Distance;
+    PidCalucate(&dist);
+    speed_pid.tar = dist.out;
+}
+
+void PWMLimit(float *pwm_a, float *pwm_b)
+{
+    if (*pwm_a > MAXPWM) *pwm_a = MAXPWM;
+    if (*pwm_a < -MAXPWM) *pwm_a = -MAXPWM;
+    if (*pwm_b > MAXPWM) *pwm_b = MAXPWM;
+    if (*pwm_b < -MAXPWM) *pwm_b = -MAXPWM;
+}
+
+void DataClear(void)
+{
+    dist.iout = 0; dist.out = 0;
+}
+
+/* ===============  main control interrupt =============== */
+
+int EXTI15_10_IRQHandler(void)
+{
+    if (INT == 0)
+    {
+        EXTI->PR = 1 << 12;
+        Flag_Target = !Flag_Target;
+
+        if (delay_flag == 1)
+        {
+            if (++delay_50 >= 10) delay_50 = 0, delay_flag = 0;
+        }
+
+        Get_Angle(Way_Angle);
+
+        if (Flag_Target == 1) return 0;   /* 10ms once */
+
+        Encoder_Left = Read_Encoder(2);
+        Encoder_Right = Read_Encoder(4);
+
+        /* key for mode switching */
+        Key();
+
+        /* safety checks */
+        CheckLiftState();
+        DetectPutDown();
+        CheckFallDown();
+
+        /* main balance control with mode */
+        Balance();
+    }
+    return 0;
+}
+
+/* ===============  PID loops =============== */
+
+int balance(float Angle, float Gyro)
+{
+    float Bias;
+    int balance_val;
+    Bias = Angle - ZHONGZHI;
+    balance_val = Balance_Kp * Bias + Gyro * Balance_Kd;
+    return balance_val;
+}
+
+int velocity(int encoder_left, int encoder_right)
+{
+    static float Velocity, Encoder_Least, Encoder, Movement;
+    static float Encoder_Integral, Target_Velocity;
+
+    if (Bi_zhang == 1 && Flag_sudu == 1) Target_Velocity = 55;
+    else Target_Velocity = 110;
+    if (1 == Flag_Qian) Movement = Target_Velocity / Flag_sudu;
+    else if (1 == Flag_Hou) Movement = -Target_Velocity / Flag_sudu;
+    else Movement = 0;
+
+    Encoder_Least = (encoder_left + encoder_right) - 0;
+    Encoder *= 0.8;
+    Encoder += Encoder_Least * 0.2;
+    Encoder_Integral += Encoder;
+    Encoder_Integral = Encoder_Integral - Movement;
+    if (Encoder_Integral > 10000) Encoder_Integral = 10000;
+    if (Encoder_Integral < -10000) Encoder_Integral = -10000;
+    Velocity = Encoder * Velocity_Kp + Encoder_Integral * Velocity_Ki;
+    if (Turn_Off(Angle_Balance, Voltage) == 1 || Flag_Stop == 1) Encoder_Integral = 0;
+    return Velocity;
+}
+
+int turn(int encoder_left, int encoder_right, float gyro)
+{
+    static float Turn_Target, Turn, Encoder_temp, Turn_Convert = 0.9, Turn_Count;
+    float Turn_Amplitude = 88 / Flag_sudu, Kp = 42, Kd = 0;
+
+    if (balance_state.mode == MODE_TRACE)
+    {
+        Turn_Convert = 1.2;
+        Kp = 30;
+        if (1 == turn_dir)
+            Turn_Target += Turn_Convert;
+        else if (2 == turn_dir)
+            Turn_Target -= Turn_Convert;
+        else
+            Turn_Target = 0;
+    }
+    else
+    {
+        if (1 == Flag_Left || 1 == Flag_Right)
+        {
+            if (++Turn_Count == 1)
+                Encoder_temp = myabs(encoder_left + encoder_right);
+            Turn_Convert = 50 / Encoder_temp;
+            if (Turn_Convert < 0.6) Turn_Convert = 0.6;
+            if (Turn_Convert > 3) Turn_Convert = 3;
+        }
+        else
+        {
+            Turn_Convert = 0.9;
+            Turn_Count = 0;
+            Encoder_temp = 0;
+        }
+        if (1 == Flag_Left) Turn_Target -= Turn_Convert;
+        else if (1 == Flag_Right) Turn_Target += Turn_Convert;
+        else Turn_Target = 0;
+    }
+
+    if (Turn_Target > Turn_Amplitude) Turn_Target = Turn_Amplitude;
+    if (Turn_Target < -Turn_Amplitude) Turn_Target = -Turn_Amplitude;
+    if (Flag_Qian == 1 || Flag_Hou == 1) Kd = 0.5;
+    else Kd = 0;
+    Turn = -Turn_Target * Kp - gyro * Kd;
+    return Turn;
+}
+
+void Set_Pwm(int moto1, int moto2)
+{
+    if (moto1 > 0) AIN2 = 0, AIN1 = 1;
+    else AIN2 = 1, AIN1 = 0;
+    PWMA = myabs(moto1);
+    if (moto2 > 0) BIN1 = 0, BIN2 = 1;
+    else BIN1 = 1, BIN2 = 0;
+    PWMB = myabs(moto2);
+}
+
+void Xianfu_Pwm(void)
+{
+    int Amplitude = 6900;
+    if (Moto1 < -Amplitude) Moto1 = -Amplitude;
+    if (Moto1 > Amplitude) Moto1 = Amplitude;
+    if (Moto2 < -Amplitude) Moto2 = -Amplitude;
+    if (Moto2 > Amplitude) Moto2 = Amplitude;
+}
+
+u8 Turn_Off(float angle, int voltage)
+{
+    u8 temp;
+    if (angle < -40 || angle > 40 || 1 == Flag_Stop || voltage < 1110)
+    {
+        temp = 1;
+        AIN1 = 0; AIN2 = 0;
+        BIN1 = 0; BIN2 = 0;
+    }
+    else
+        temp = 0;
+    return temp;
+}
+
+void Key(void)
+{
+    u8 tmp, tmp2;
+    tmp = click_N_Double(50);
+    if (tmp == 1) Flag_Stop = !Flag_Stop;
+    tmp2 = Long_Press();
+    if (tmp2 == 1)
+    {
+        balance_state.mode++;
+        balance_state.mode %= 5;
+        SetBeepMode(BEEP_SYSTEM, BEEP_ON);
+    }
+}
+
+void Get_Angle(u8 way)
+{
+    float Accel_Y, Accel_Angle, Accel_Z, Gyro_X, Gyro_Z;
+    Temperature = Read_Temperature();
+
+    if (way == 1)
+    {
+        Read_DMP();
+        Angle_Balance = -Roll;
+        Gyro_Balance = -gyro[0];
+        Gyro_Turn = gyro[2];
+        Acceleration_Z = accel[2];
+    }
+    else
+    {
+        Gyro_X = (I2C_ReadOneByte(devAddr, MPU6050_RA_GYRO_XOUT_H) << 8) + I2C_ReadOneByte(devAddr, MPU6050_RA_GYRO_XOUT_L);
+        Gyro_Z = (I2C_ReadOneByte(devAddr, MPU6050_RA_GYRO_ZOUT_H) << 8) + I2C_ReadOneByte(devAddr, MPU6050_RA_GYRO_ZOUT_L);
+        Accel_Y = (I2C_ReadOneByte(devAddr, MPU6050_RA_ACCEL_YOUT_H) << 8) + I2C_ReadOneByte(devAddr, MPU6050_RA_ACCEL_YOUT_L);
+        Accel_Z = (I2C_ReadOneByte(devAddr, MPU6050_RA_ACCEL_ZOUT_H) << 8) + I2C_ReadOneByte(devAddr, MPU6050_RA_ACCEL_ZOUT_L);
+        if (Gyro_X > 32768) Gyro_X -= 65536;
+        if (Gyro_Z > 32768) Gyro_Z -= 65536;
+        if (Accel_Y > 32768) Accel_Y -= 65536;
+        if (Accel_Z > 32768) Accel_Z -= 65536;
+        Gyro_Balance = Gyro_X;
+        Accel_Angle = atan2(Accel_Y, Accel_Z) * 180 / PI;
+        Gyro_X = Gyro_X / 16.4;
+
+        if (way == 2) Kalman_Filter(Accel_Angle, Gyro_X);
+        else if (way == 3) Yijielvbo(Accel_Angle, Gyro_X);
+        Angle_Balance = angle;
+        Gyro_Turn = Gyro_Z;
+        Acceleration_Z = Accel_Z;
+    }
+}
+
+int myabs(int a)
+{
+    int temp;
+    if (a < 0) temp = -a;
+    else temp = a;
+    return temp;
+}
