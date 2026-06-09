@@ -25,8 +25,14 @@ RTE/
 # IDE
 *.uvopt
 *.uvguix.*
+*_uvopt.bak
+*_uvproj.bak
+*.uvproj.saved_uv4
 JLinkLog.txt
+JLinkSettings.ini
 *.jdebug
+*.map
+*.dep
 
 # OS files
 Thumbs.db
