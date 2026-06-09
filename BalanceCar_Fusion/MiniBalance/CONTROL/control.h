@@ -64,7 +64,8 @@ void CheckFallDown(void);
 void ObstacleAvoid(void);
 
 void DistPidCtrl(void);
-void PWMLimit(float PWMA, float PWMB);
+void PWMLimit(float *pwm_a, float *pwm_b);
+void InitPIDParams(void);
 void DataClear(void);
 
 #endif

@@ -17,8 +17,9 @@ float Show_Data_Mb;                         				//ȫ����ʾ�����
 u32 Distance;                               							//���������
 u8 delay_50,delay_flag,Bi_zhang=0,PID_Send,Flash_Send; 		//��ʱ�͵��εȱ���
 float Acceleration_Z;
-u16 turn_dir=0;                       						//Z����ٶȼ�  
 float Balance_Kp=300,Balance_Kd=1,Velocity_Kp=80,Velocity_Ki=0.4;
+u8 Uart_Ctrl_Flag = 0;
+u8 UartCount = 0;
 float Turn_Kd=0,Dist_Kp=-0.35,Dist_Ki=-0.35/200;
 u16 PID_Parameter[10],Flash_Parameter[10];  	//Flash�������
 int main(void)
@@ -39,7 +40,8 @@ int main(void)
     MPU6050_initialize();           									//=====MPU6050��ʼ��	
     DMP_Init();                     												//=====��ʼ��DMP 
     OLED_Init();                    												//=====OLED��ʼ��	    
-		PID_Init(&dist, POSITION_PID, dist_pid.kp, dist_pid.ki, 0);
+		InitPIDParams();
+	PID_Init(&dist, POSITION_PID, dist_pid.kp, dist_pid.ki, 0);
 	BeepDeviceInit();
 	Flash_Read();
 	TIM3_Cap_Init(0XFFFF,72-1);	    					//=====��������ʼ��
