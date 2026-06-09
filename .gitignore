@@ -1,0 +1,57 @@
+# Keil output
+*.uvgui.*
+*.uvoptx
+*.dep
+*.crf
+*.d
+*.o
+*.axf
+*.htm
+*.lnp
+*.sct
+*.lst
+*.map
+*.iex
+*.tra
+*.download_log
+
+# Build directories
+OBJ/
+Objects/
+Listings/
+DebugConfig/
+RTE/
+
+# IDE
+*.uvopt
+*.uvguix.*
+JLinkLog.txt
+*.jdebug
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Temp
+*.tmp
+*.bak
+*~
+
+# Node
+node_modules/
+package.json
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Large installers
+*.EXE
+*.exe
+
+# Claude internal
+.agents/
+conversation/
+all_source_files.txt
