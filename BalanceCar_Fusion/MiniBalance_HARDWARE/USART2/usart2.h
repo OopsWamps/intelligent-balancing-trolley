@@ -15,7 +15,14 @@ typedef struct {
 
 extern PiVision_t pi_vision;
 
+/* STM32 -> Pi reverse protocol */
+#define PI_CMD_FRAME_HEADER  0xB0
+#define PI_CMD_LEARN         0x01
+#define PI_CMD_CLEAR         0x02
+#define PI_CMD_STOP          0x03
+
 void uart2_init(u32 bound);
+void uart2_send_cmd(u8 cmd);
 void USART2_IRQHandler(void);
 
 #endif

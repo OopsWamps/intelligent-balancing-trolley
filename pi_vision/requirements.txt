@@ -1,0 +1,8 @@
+# Phase 1: color tracker
+opencv-python>=4.5
+pyserial>=3.5
+numpy>=1.21
+
+# Phase 2: ML tracker (person following)
+# mediapipe>=0.10    ← install on Raspberry Pi
+# On Pi: pip install mediapipe-rpi4  (pre-built wheels for ARM)

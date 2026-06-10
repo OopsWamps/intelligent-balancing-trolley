@@ -85,6 +85,10 @@ void ModeSelect(void)
     if (balance_state.mode != last_mode)
     {
         DataClear();
+        if (last_mode == MODE_VISION)
+            uart2_send_cmd(PI_CMD_CLEAR);
+        if (balance_state.mode == MODE_VISION)
+            uart2_send_cmd(PI_CMD_LEARN);
         last_mode = balance_state.mode;
     }
 
@@ -133,6 +137,19 @@ void ModeSelect(void)
         Led_Flash(0);
         Bi_zhang = 0;
         break;
+    case MODE_VISION:
+        speed_pid.ki = 0;
+        Led_Flash(100);
+        if (pi_vision.fresh && pi_vision.confidence > 30)
+        {
+            if (pi_vision.distance > 0)
+                speed_pid.tar = 0.5f * (pi_vision.distance - 80);
+        }
+        else
+        {
+            speed_pid.tar = 0;
+        }
+        break;
     default:
         break;
     }
@@ -140,9 +157,20 @@ void ModeSelect(void)
 
 void Balance(void)
 {
+    static u8 prev_flag_stop = 0;
+
     if (balance_state.balance_enable)
     {
         ModeSelect();
+
+        if (balance_state.mode == MODE_VISION)
+        {
+            if (Flag_Stop && !prev_flag_stop)
+                uart2_send_cmd(PI_CMD_STOP);
+            if (!Flag_Stop && prev_flag_stop)
+                uart2_send_cmd(PI_CMD_LEARN);
+        }
+        prev_flag_stop = Flag_Stop;
 
         Balance_Pwm = balance(Angle_Balance, Gyro_Balance);
         Velocity_Pwm = velocity(Encoder_Left, Encoder_Right);
@@ -255,7 +283,18 @@ int turn(int encoder_left, int encoder_right, float gyro)
     static float Turn_Target, Turn, Encoder_temp, Turn_Convert = 0.9, Turn_Count;
     float Turn_Amplitude = 88 / Flag_sudu, Kp = 42, Kd = 0;
 
-    if (balance_state.mode == MODE_TRACE)
+    if (balance_state.mode == MODE_VISION)
+    {
+        if (pi_vision.fresh && pi_vision.confidence > 30)
+        {
+            Turn_Target = pi_vision.x_offset * 0.3f;
+        }
+        else
+        {
+            Turn_Target = 0;
+        }
+    }
+    else if (balance_state.mode == MODE_TRACE)
     {
         Turn_Convert = 1.2;
         Kp = 30;

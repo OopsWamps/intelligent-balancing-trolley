@@ -38,6 +38,14 @@ void uart2_init(u32 bound)
     USART_Cmd(USART2, ENABLE);
 }
 
+void uart2_send_cmd(u8 cmd)
+{
+    USART_SendData(USART2, PI_CMD_FRAME_HEADER);
+    while (USART_GetFlagStatus(USART2, USART_FLAG_TC) == RESET);
+    USART_SendData(USART2, cmd);
+    while (USART_GetFlagStatus(USART2, USART_FLAG_TC) == RESET);
+}
+
 void USART2_IRQHandler(void)
 {
     if (USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)
