@@ -1,0 +1,1 @@
+{"code": "const r = await eda.lib_Device.search(\"TB6612FNG\", undefined, undefined, undefined, 5, 1); return r.length;"}
