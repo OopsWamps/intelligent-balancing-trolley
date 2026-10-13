@@ -43,6 +43,7 @@ Desktop.ini
 *.tmp
 *.bak
 *~
+~$*
 
 # Node
 node_modules/
